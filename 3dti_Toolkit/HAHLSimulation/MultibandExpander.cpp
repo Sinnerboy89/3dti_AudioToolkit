@@ -26,8 +26,14 @@
 
 namespace HAHLSimulation {
 
-	void CMultibandExpander::Setup(int samplingRate, float iniFreq_Hz, int bandsNumber)
+	void CMultibandExpander::Setup(int samplingRate, float iniFreq_Hz, int bandsNumber, int filtersPerBand)
 	{
+		if ((filtersPerBand % 2) == 0)
+		{
+			SET_RESULT(RESULT_ERROR_BADSIZE, "Filters per band for multiband expander must be an odd number.");
+			return;
+		}
+
 		bandFrequencies_Hz.clear();
 		bandExpanders.clear();
 		bandGains_dB.clear();
@@ -36,86 +42,88 @@ namespace HAHLSimulation {
 		// Setup equalizer	
 		float bandsPerOctave = 1.0f;	// Currently fixed to one band per octave, but could be a parameter
 		float bandFrequencyStep = std::pow(2, 1.0f / (float)bandsPerOctave);
+		float filterFrequencyStep = std::pow(2, 1.0f / (bandsPerOctave*filtersPerBand));
 		float bandFrequency = iniFreq_Hz;
-		
+		float filterFrequency = bandFrequency / ((float)(trunc(filtersPerBand / 2))*filterFrequencyStep);
+
+		// Compute Q for all filters
+		float octaveStep = 1.0f / ((float)filtersPerBand * bandsPerOctave);
+		float octaveStepPow = std::pow(2.0f, octaveStep);
+		float Q_BPF = std::sqrt(octaveStepPow) / (octaveStepPow - 1.0f);
+
+		// Create and setup all bands
+		filterBank.RemoveFilters();
 		for (int band = 0; band < bandsNumber; band++)
 		{
+			// Create filters
+			for (int filter = 0; filter < filtersPerBand; filter++)
+			{
+				filterBank.AddFilter()->Setup(samplingRate, filterFrequency, Q_BPF, Common::T_filterType::BANDPASS);
+				filterFrequency *= filterFrequencyStep;
+			}
+
 			// Add band to list of frequencies and gains
 			bandFrequencies_Hz.push_back(bandFrequency);
 			bandGains_dB.push_back(0.0f);
 			bandFrequency *= bandFrequencyStep;
 
-			// Create atenuation for band
-			bandAttenuations.push_back(0.0f);
-		}
-
-		filterBank.RemoveFilters();
-		filterBank.SetSamplingFreq(samplingRate);
-		filterBank.InitWithFreqRangeOverlap(20, 20000, 0.0, Common::CGammatoneFilterBank::EAR_MODEL_DEFAULT);
-
-		// Setup expanders
-		for (int filterIndex = 0; filterIndex < filterBank.GetNumFilters(); filterIndex++)
-		{
+			// Setup expanders
 			Common::CDynamicExpanderMono* expander = new Common::CDynamicExpanderMono();
 			expander->Setup(samplingRate, DEFAULT_RATIO, DEFAULT_THRESHOLD, DEFAULT_ATTACK, DEFAULT_RELEASE);
 			bandExpanders.push_back(expander);
 
-			float filterFrequency = filterBank.GetFilter(filterIndex)->GetCenterFrequency();
-			int lowerBandIndex, higherBandIndex;
-			float lowerBandFrequency = GetLowerBandFrequency(filterFrequency, lowerBandIndex);
-			lowerBandIndices.push_back(lowerBandIndex);
-			float higherBandFrequency = GetHigherBandFrequency(filterFrequency, higherBandIndex);
-			higherBandIndices.push_back(higherBandIndex);
-			float frequencyDistance = higherBandFrequency - lowerBandFrequency;
-			float lowerBandFactor, higherBandFactor;
-			if (lowerBandFrequency <= 20.0f)
-			{
-				lowerBandFactor = -1.0f;
-			}
-			else
-			{
-				lowerBandFactor = (higherBandFrequency - filterFrequency) / frequencyDistance;
-			}
-
-			if (higherBandFrequency >= 20000.0f)
-			{
-				higherBandFactor = -1.0f;
-			}
-			else
-			{
-				higherBandFactor = (filterFrequency - lowerBandFrequency) / frequencyDistance;
-			}
-
-			lowerBandFactors.push_back(lowerBandFactor);
-			higherBandFactors.push_back(higherBandFactor);
-
-
+			// Create atenuation for band
+			bandAttenuations.push_back(0.0f);
 		}
 
 	}
 
+	//////////////////////////////////////////////
+	// Get the first and last index in the filter bank for the internal bands corresponding to a given band index
+	void CMultibandExpander::GetBandFiltersFirstAndLastIndex(int bandIndex, int &firstInternalBand, int &lastInternalBand)
+	{
+		int centralInternalBand = bandIndex * GetNumberOfFiltersPerBand() + trunc(GetNumberOfFiltersPerBand() / 2);
+		firstInternalBand = centralInternalBand - trunc(GetNumberOfFiltersPerBand() / 2);
+		lastInternalBand = centralInternalBand + trunc(GetNumberOfFiltersPerBand() / 2);
+	}
 
+	//////////////////////////////////////////////
+	// Get configured number of filters per band, to increase bandwidth
+	int CMultibandExpander::GetNumberOfFiltersPerBand()
+	{
+		return (filterBank.GetNumFilters() / bandFrequencies_Hz.size());
+	}
+
+	//////////////////////////////////////////////
 	void CMultibandExpander::Process(CMonoBuffer<float> &  inputBuffer, CMonoBuffer<float> & outputBuffer)
 	{
 		// Initialization of output buffer
 		outputBuffer.Fill(outputBuffer.size(), 0.0f);
-
-		for (int filterIndex = 0; filterIndex < filterBank.GetNumFilters(); filterIndex++)
+		// Mix internal band outputs into groups, process expanders of each group, apply attenuations, and mix into output buffer
+		for (int band = 0; band < bandFrequencies_Hz.size(); band++) 
 		{
-			// Declaration of buffer for each filter output
-			CMonoBuffer<float> oneFilterBuffer(inputBuffer.size(), 0.0f);
+			// Declaration of buffer for each band output
+			CMonoBuffer<float> oneBandBuffer(inputBuffer.size(), 0.0f);
 
-			// Process input buffer for each filter
-			filterBank.GetFilter(filterIndex)->Process(inputBuffer, oneFilterBuffer);
+			// Process eq for each band, mixing eq process of all internal band filters
+			int firstBandFilter, lastBandFilter;
+			GetBandFiltersFirstAndLastIndex(band, firstBandFilter, lastBandFilter);
+			for (int i = firstBandFilter; i <= lastBandFilter; i++)
+			{
+				CMonoBuffer<float> oneFilterOutputBuffer(inputBuffer.size());
+				filterBank.GetFilter(i)->Process(inputBuffer, oneFilterOutputBuffer);
+				oneBandBuffer += oneFilterOutputBuffer;
+			}
 
-			// Process expander for each filter
-			bandExpanders[filterIndex]->Process(oneFilterBuffer);
+			// Process expander for each band
+			bandExpanders[band]->Process(oneBandBuffer);
 
-			// Apply attenuation for each filter
-			oneFilterBuffer.ApplyGain(GetFilterGain(filterIndex));
+			// Apply attenuation for each band
+			oneBandBuffer.ApplyGain(CalculateAttenuationFactor(bandAttenuations[band]));
 
 			// Mix into output buffer
-			outputBuffer += oneFilterBuffer;
+			outputBuffer += oneBandBuffer;
+
 		}
 
 	}
@@ -158,75 +166,4 @@ namespace HAHLSimulation {
 	{
 		return std::pow(10.0f, -attenuation / 20.0f);
 	}
-
-	float CMultibandExpander::GetFilterGain(float filterIndex) // en veces directamente
-	{
-		if		(lowerBandFactors[filterIndex] < 0 && higherBandFactors[filterIndex] > 0)
-		{
-			return	CalculateAttenuationFactor(bandAttenuations[higherBandIndices[filterIndex]]);
-		}
-		else if (lowerBandFactors[filterIndex] > 0 && higherBandFactors[filterIndex] < 0)
-		{
-			return	CalculateAttenuationFactor(bandAttenuations[lowerBandIndices [filterIndex]]);
-		}
-		else if (lowerBandFactors[filterIndex] > 0 && higherBandFactors[filterIndex] > 0)
-		{
-			return	CalculateAttenuationFactor(bandAttenuations[lowerBandIndices [filterIndex]]) * lowerBandFactors [filterIndex] +
-					CalculateAttenuationFactor(bandAttenuations[higherBandIndices[filterIndex]]) * higherBandFactors[filterIndex];
-		}
-		else
-		{
-			return 0.0f;
-		}
-
-		
-	}
-
-	float CMultibandExpander::GetLowerBandFrequency(float filterFrequency, int & lowerBandIndex)
-	{
-		for (int i = 0; i < GetNumBands(); i++)
-		{
-			if (filterFrequency < bandFrequencies_Hz[i])
-			{
-				if (i == 0)
-				{
-					lowerBandIndex = -1;
-					return 0.0f;
-				}
-				else
-				{
-					lowerBandIndex = i - 1;
-					return bandFrequencies_Hz[lowerBandIndex];
-				}
-			}
-		}
-
-		lowerBandIndex = GetNumBands() - 1;
-		return bandFrequencies_Hz[lowerBandIndex];
-
-	}
-
-	float CMultibandExpander::GetHigherBandFrequency(float filterFrequency, int & higherBandIndex)
-	{
-		for (int i = 0; i < GetNumBands(); i++)
-		{
-			if (filterFrequency < bandFrequencies_Hz[i])
-			{
-				if (i == 0)
-				{
-					higherBandIndex = 0;
-					return bandFrequencies_Hz[0];
-				}
-				else
-				{
-					higherBandIndex = i;
-					return bandFrequencies_Hz[higherBandIndex];
-				}
-			}
-		}
-
-		higherBandIndex = -1;
-		return 30000.0f;
-	}
-
 }// end namespace HAHLSimulation
