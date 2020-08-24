@@ -8,6 +8,8 @@ Technical details about the 3D Tune-In Toolkit spatialiser are described in:
 
 Cuevas-Rodríguez M, Picinali L, González-Toledo D, Garre C, de la Rubia-Cuestas E, Molina-Tanco L and Reyes-Lecuona A. (2019) 3D Tune-In Toolkit: An open-source library for real-time binaural spatialisation. PLOS ONE 14(3): e0211899. https://doi.org/10.1371/journal.pone.0211899
 
+For downloading various compiled releases of the 3DTI Toolkit (e.g. Test Applications, VST plugins, etc.), visit the release section (https://github.com/3DTune-In/3dti_AudioToolkit/releases)
+
 **The structure of the repository is as follows:**
 ```
 3dti_AudioToolkit
@@ -79,7 +81,7 @@ This folder contains the source code for the tools implemented for the format co
 
 ## Third party libraries
 
-The 3D Tune-In Toolkit has partially integrated the Takuya OOURA General purpose FFT library (http://www.kurims.kyoto-u.ac.jp/~ooura/fft.html)  
+The 3D Tune-In Toolkit has partially integrated the Takuya OOURA General purpose FFT library (http://www.kurims.kyoto-u.ac.jp/~ooura/fft.html) and Eigen library for linear algebra (https://eigen.tuxfamily.org/).
 
 The 3D Tune-In Toolkit Resource Management Package uses: 
 * Libsofa (Copyright (c) 2013-2014, UMR STMS 9912-Ircam-Centre Pompidou/CNRS/UPMC. https://github.com/sofacoustics/API_Cpp). 
@@ -105,11 +107,12 @@ This software was developed by a team coordinated by
 -	Lorenzo Picinali ([Imperial College London](https://www.imperial.ac.uk/)). Contact: l.picinali@imperial.ac.uk 
 
 The members of the development team are (in alphabetical order):
-- [Maria Cuevas-Rodriguez](https://github.com/mariacuevas) (University of Malaga)
-- [Carlos Garre](https://github.com/carlosgarre) (University of Malaga)
-- [Daniel Gonzalez-Toledo](https://github.com/dgonzalezt) (University of Malaga)
+- [Maria Cuevas-Rodriguez](https://github.com/mariacuevas) (University of Malaga) 
+- [Carlos Garre](https://github.com/carlosgarre) (University of Malaga) (Left the team Jan 2018)
+- [Daniel Gonzalez-Toledo](https://github.com/dgonzalezt) (University of Malaga) 
 - [Luis Molina-Tanco](https://github.com/lmtanco) (University of Malaga)
-- [Ernesto de la Rubia](https://github.com/ernestodelarubia) (University of Malaga)
+- [Ernesto de la Rubia](https://github.com/ernestodelarubia) (University of Malaga) (Left the team Apr 2018)
+- [Ángel Rodríguez-Rivero](https://github.com/ardgzrivero) (University of Malaga) (Joined the team Feb 2018)
 
 Other contributors:
 - David Poirier-Quinot (Imperial College London) produced filter coefficients to simulate near field effects and high performance spatialization. He also contributed in the design of algorithms implemented in the Hearing Loss simulator.
